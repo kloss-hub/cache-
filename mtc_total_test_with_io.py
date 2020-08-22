@@ -1,4 +1,4 @@
-#coding=utf-8
+#coding=utf-8#coding=utf-8
 from __future__ import print_function
 import math
 import mtc_data_structure
@@ -8,19 +8,8 @@ import os
 from deal_file import load_lines
 from deal_file import parse_line
 
-path = "/home/trace/ms-cambridge/part/"  
-#++
-# 模拟磁盘与ssd文件放置目录
-diskpath = "/home/trace/virtual-disk/"
-#ssd映射表
-ssdDict={}  
-blockSize=4096
-#模拟磁盘的开始块
-trace_block_begin={}    
-tempbuffer='a'*blockSize #模拟写入的数据 blockSize字节
-free_list={}        #各个trace的空闲位字典
-total_free_list=[]  #用于存放全部的空闲位
-
+path = "/home/trace/ms-cambridge/part/"
+# path = "./"
 danwei = 10**7
 lifespanMonths=36
 # g = 10^-7s内一个块允许的写入次数
@@ -28,8 +17,8 @@ g = 0.014/3600/danwei
 # 摩尔系数，按照摩尔定律18个月翻一倍，计算出来的1个月涨多少，到时候向下取整
 molc = math.exp(math.log(2)/18)
 traceFileName = None
-version=4.7
 
+version=4.7
 # The program is used to simulate the total test for multi-tenent cache
 # input: the output of handle_csv_time_partition of cambridge.py
 #        (which means the req files are 1hr each)
@@ -47,6 +36,45 @@ version=4.7
 # uclnDict是所有的ucln，key是blockid，value没用
 
 # assume that s|ttl%3600=0
+# def load_lines(trace, ttl, s, lines, uclnDict):
+#     start = time.clock()
+#     traceFileLength = 3600*danwei
+#     # ul=1, s=0/3600, fileStart=0/1, ttl=3600/7200, fileEnd=1/2/2/3
+#     fileStart = s / traceFileLength
+#     fileEnd = (s+ttl) / traceFileLength
+
+#     nrfile = ttl/traceFileLength
+#     print("trace", trace, "fileStart", fileStart, "fileEnd", fileEnd, "nrfile", nrfile)
+#     for i in range(fileStart, fileEnd):
+#         filename = path + trace + "_" + str(i+1) + ".req"
+#         print(filename)
+#         fp = open(filename, "r")
+#         l = fp.readlines()
+#         lines.extend(l[:-2])
+#         d = eval(l[-1])
+#         uclnDict.update(d)
+#         # print("test", trace, len(d), len(uclnDict))
+#         fp.close()
+#     print("load lines consumed", time.clock()-start)
+
+# # 功能：把读到的一行转变成需要的内容
+# # mode = "gen", 是整个程序Input的req文件
+# # mode = "get", 是程序中间生成的mix文件，第一个元素是trace
+# def parse_line(line, mode):
+#     # print("line", line)
+#     items = line.strip().split(' ')
+#     # print("items", items)
+#     if mode=="gen":
+#         time = int(items[0])
+#         rw = int(items[1])
+#         blkid = int(items[3])
+#         return (time, rw, blkid)
+#     # trace, time, rw, blkid
+#     trace = items[0]
+#     time = int(items[1])
+#     rw = int(items[2])
+#     blkid = int(items[3])
+#     return (trace, time, rw, blkid)
 
 # 功能：混合trace，输出到mix file中
 # 目前的程序仍然是所有trace数据都存放到了内存，再输出到文件，再读入。
@@ -58,76 +86,23 @@ version=4.7
 #      ul设定原则是，必须倍数于后面cache内的优化操作。例如cache调整大小最小单位是0.5s
 #      那仍然用1s去混合trace，就会不准
 # assume that unit length is 1s and do not need to mix inside a unit
-#++
-# 创建具有block_num块的文件(模拟磁盘与ssd)
-def mkdir(path, block_num):
-    with open(path,'wb') as f:
-        f.seek(block_num*blockSize-1)
-        f.write(b'\x00')
-        f.close()       
-
-#读取文件对应偏移量的块 返回buffer
-def read_block(path, block_offset):
-    with open(path,'r') as f:
-        f.seek(block_offset*blockSize)
-        buffer=f.read(blockSize)
-        f.close()
-    return buffer
-
-# 将buffer写入文件对应偏移量的块
-def write_block(path, block_offset, buffer):
-    with open(path,'w') as f:
-        f.seek(block_offset*blockSize)
-        f.write(buffer)
-        f.close()
-
-# 读取并返回trace中block_id对应的block
-def read_disk(trace, block_id):
-    return read_block(diskpath+trace,block_id-trace_block_begin[trace])
-
-# 写入trace中block_id对应的block
-def write_disk(trace, block_id, buffer):
-    write_block(diskpath+trace,block_id-trace_block_begin[trace],buffer)
-
-# 读取并返回ssd中对应的块
-def read_ssd(ssd_bid):
-    return read_block(diskpath+'ssd',ssd_bid)
-
-#写入ssd中对应的块
-def write_ssd(ssd_bid, buffer):
-    write_block(diskpath+'ssd',ssd_bid,buffer)
-
-
-# 生成混合请求
-#++ 同时计算每个用户的模拟磁盘大小
 def generate_reqs(traces, totalTimeLength, unitLength, starts):
-#    print("traces", traces)
+    print("traces", traces)
     lines = []
     idxlist = []
     uclnDict = []
     global traceFileName
     traceFileName = path + "mix" + "_" + str(time.clock()) + ".req"
-    print("tracefile:",traceFileName)
     logfile = open(traceFileName, 'w')
-    #混合文件
-    for trace in traces:  #初始化
+    for trace in traces:
         lines.append([])
         idxlist.append(0)
         uclnDict.append({})
-    for i in range(len(traces)):  
+    for i in range(len(traces)):
         start = starts[i]
         timeUnitEnd = start + unitLength
-        timeEnd = start + totalTimeLength       #这两步是否没有意义呢
+        timeEnd = start + totalTimeLength
         load_lines(path, traces[i], totalTimeLength, start, lines[i], uclnDict[i])
-#++     计算每个trace的所需磁盘大小并构建对应文件模拟磁盘
-        bid = []
-        for line in lines[i]:
-            items = line.strip().split(' ')
-            bid.append(int(items[3]))                    #记录下所有的bid
-        mkdir(diskpath + traces[i],max(bid)-min(bid)+1)  #创建文件，模拟磁盘
-        print('trace:',traces[i],'begin:',min(bid)+1,'end:',max(bid))
-        trace_block_begin[traces[i]]=min(bid)            #记录下磁盘的开始块
-#
     timeUnitEnd = unitLength
     timeEnd = totalTimeLength
     while True:
@@ -159,7 +134,6 @@ def generate_reqs(traces, totalTimeLength, unitLength, starts):
         
 def get_reqs(traces):
     global traceFileName
-    #traceFileName = path + "mix" + "_" + str(time.clock()) + ".req" in generate_reqs
     fp = open(traceFileName, 'r')
     lines = fp.readlines()
     return lines
@@ -189,15 +163,15 @@ def get_total_size(cacheDict, mode):
     return s
 
 # 输出所有结果
-def print_result(traces, device, cacheDict, time, starts, periodLength, sizeRate, policy, runTime):
-#++
-    logfile = "./total_result_with_io.csv"
+def print_result(traces, device, cacheDict, time, starts, periodLength, sizeRate, policy, runTime,total_config_time):
+    logfile = "./total_result.csv"
     fp = open(logfile, 'a')
+    print('------------------------------------------------', file=fp)
     print(version, time/danwei, periodLength/danwei, sizeRate, policy, sep=',', file=fp)
     for trace in traces:
         print(trace, sep=',', end=',', file=fp)
-    #
     print(runTime, file=fp)
+    print("total_config_time=",total_config_time,file=fp)
     write = get_total_write(cacheDict, "base")
     size = get_total_size(cacheDict, "base")
     cost = device.get_cost(write, time, size)
@@ -210,7 +184,6 @@ def print_result(traces, device, cacheDict, time, starts, periodLength, sizeRate
     size = get_total_size(cacheDict, "cache")
     cost2 = device.get_cost(write, time, device.size)
     print("cache", write, size, cost2, cost2/cost, sep=',',  file=fp)
-
     for i in range(len(traces)):
         trace = traces[i]
         start = starts[i]/totalTimeLength
@@ -251,6 +224,7 @@ def record_process(watchDict, cacheDict):
     # print("after", watchDict)
 
 def get_cost(write, time, size):
+        # print("write=", write, ",size=", size, ",g=", self.g, ",time=", time)
     unitWrite = 1.0*write/size/time
     # print(unitWrite, unitWrite>self.g)
     # 写入量超出额定写入量
@@ -261,6 +235,7 @@ def get_cost(write, time, size):
             tcost = size * (molc**int(lifespan*i))
             cost += tcost
             # print("debug4.6", "tcost=", tcost, "\ti=", i)
+
     else:
         cost = size
     return cost
@@ -288,32 +263,7 @@ def print_watch(watchDict, cacheDict, time):
                 cost = get_cost(myupdate, time, size)
                 print(l[i], size, p, hit, myupdate, cost, sep=",", file=fp)
     fp.close()
-
-#++ 将evicted_bid从ssd中驱逐，并返回驱逐的块在ssd中的id
-def evicte_in_ssd(trace,evicted_bid):
-    sbid=ssdDict[trace][evicted_bid]['ssd_bid']
-    if ssdDict[trace][evicted_bid]['needwb']==1:   #需要写回磁盘
-        buffer=read_ssd(sbid)
-        write_disk(trace,evicted_bid,buffer)        #写
-    # 待优化
-    ssdDict[trace].pop(evicted_bid)                 #从映射表中删除
-    return sbid    
-
-#++ 更改配置，需要对有数据的块和空闲块分别处理
-def change_ssd_config(trace , del_list , freenode):
-    print('in:',trace,freenode)
-    for del_bid in del_list:    #需要删除的节点
-        sbid=evicte_in_ssd(trace,del_bid)
-        total_free_list.append(sbid)
-        freenode = freenode-1
-    if freenode > 0:
-        for i in range(freenode):
-            total_free_list.append(free_list[trace].pop())    #删除空闲节点
-    if freenode < 0:
-        for i in range(-freenode):
-            free_list[trace].append(total_free_list.pop())    #添加空闲节点
-    print('out')
-
+            
 def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, policy):
     global g
     uclnDict = generate_reqs(traces, totalTimeLength, unitLength, starts)
@@ -322,103 +272,69 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
     # init
     cacheDict = {}
     p = (1, round(bsizeRate/csizeRate, 1))
+    print(p)
     dimdm = {}
-    print("--------process---------")         
-    for i in range(len(traces)):  #有和trace相同数量个cache    
+    for i in range(len(traces)):    
         trace = traces[i]
         cache = mtc_data_structure.Cache(trace, bsizeRate, csizeRate, len(uclnDict[i]), p, policy)
-        cacheDict[trace] = cache     #构建对应的cache,不同的只有ucln，即cache将访问的cache空间大小
+        cacheDict[trace] = cache
         # print(trace, cacheDict[trace].cache.get_size())
-        dimdm[trace] = policy["interval"]   #时间间隔    
-#++ 初始化ssdDict
-        ssdDict[trace]={} 
-#   
+        dimdm[trace] = policy["interval"]
     # g=tbw/lifespan/capacity
-    # size = get_total_size(cacheDict, "base")
+    size = get_total_size(cacheDict, "base")
+    print("cache size = ",get_total_size(cacheDict, "cache"))
     # g是1单位时间(10^-7s)内每个块的基准写入次数
     # k1没有放进来，假设是1，租用1B1单位时间的价格为1
     device = mtc_data_structure.Device(get_total_size(cacheDict, "cache"), g, cacheDict)
-#++ 模拟ssd  分配初始free_list
-    mkdir(diskpath+"ssd",get_total_size(cacheDict, "cache"))
-    # 根据cache的大小按顺序分配
-    tempbidbegin=0
-    # for trace in traces:
-    #     free_list[trace]={}
-    #     for bid in range(tempbidbegin,cacheDict[trace].cache.size):
-    #         free_list[trace][bid]=0         #以ssd中的bid为key,value里的0代表数据为clean 1代表数据为
-    #     tempbidbegin+=cacheDict[trace].cache.size    
-    for trace in traces:
-        free_list[trace]=[]
-        for ssd_bid in range(tempbidbegin,tempbidbegin+cacheDict[trace].cache.size):
-            free_list[trace].append(ssd_bid)
-        tempbidbegin += cacheDict[trace].cache.size
-#
-    # size,g,cachedict
+    # print("device size=", device.size)
     # print(csizeRate, bsizeRate, size, int(csizeRate/bsizeRate)*size, device.size)
     periodStart = 0
-    periodLength = 60*danwei
-    reqs = get_reqs(traces)   
-    print("Reqs = ", len(reqs))  #得到混合情况下的所有请求
-    timestart = time.clock()   
-    debugCount = 0   
-    count=0
+    #change
+    # periodLength = 60*danwei
+    periodLength = 600*danwei
+    reqs = get_reqs(traces)
+    print("Reqs = ", len(reqs))
+    #++ config时间统计
+    total_config_time = 0
+    timestart = time.clock()
+    debugCount = 0
+    # for i in range(2,10):
     # 遍历每个req，进行处理
     for req in reqs:
-        count=count+1
-        (trace, mytime, rw, blkid) = parse_line(req, "get")  #从mix文件中解读出请求
-        if(len(free_list[trace])+len(ssdDict[trace])!=cacheDict[trace].cache.size):
-            print("AIYOU!",len(free_list[trace]),len(ssdDict[trace]),len(free_list[trace])+len(ssdDict[trace]),cacheDict[trace].cache.size)
+        (trace, mytime, rw, blkid) = parse_line(req, "get")
         # mytime += i*totalTimeLength
-        # hit = cacheDict[trace].cache.get_hit()                #对应cache的hit值，应该没用到
-        (needInmediateM, hit, update, evicted) = cacheDict[trace].do_req(rw, blkid)   #处理请求
-        #返回是否需要立刻修改配置，是否命中，是否更新ssd，被驱逐的数据块
-#++     请求处理后需要真正对cache（或磁盘）进行读写操作
-        if update:        #cache不命中，需要写入cache
-            if (evicted==None):   #不需要驱逐，说明cache中有空闲位，需要占用新的空闲位
-                if (len(free_list[trace])<1):
-                    print("update error: ",trace,"no free space",needInmediateM, hit, update , evicted)
-                sbid=free_list[trace].pop() #从尾巴空闲的ssd
-            else: #需要驱逐
-                sbid=evicte_in_ssd(trace,evicted)
-            #加载到ssd中
-            buffer=read_disk(trace,blkid)
-            write_ssd(sbid,buffer)  
-            # 映射表中添加项
-            ssdDict[trace][blkid]={}
-            ssdDict[trace][blkid]['ssd_bid']=sbid
-            ssdDict[trace][blkid]['needwb']=0      #还未修改，此时不需要写回
-            if rw==1:   #写操作
-                # write_ssd(sbid,tempbuffer) 
-                ssdDict[trace][blkid]['needwb']=1
-            # else:        #读操作 Q:这里还需要再读一次吗
-            #     read_ssd(sbid)
-        else:   #cache命中或直接读取磁盘
-            if hit: #cache命中
-                sbid=ssdDict[trace][blkid]['ssd_bid']#从映射表中得到数据
-                if rw==1:   #写操作
-                    write_ssd(sbid,tempbuffer)
-                    ssdDict[trace][blkid]['needwb']=1
-                else:        #读操作
-                    read_ssd(sbid)
-            else:   #不借助cache，直接读写磁盘
-                if rw==1:   #写操作
-                    write_disk(trace,blkid,tempbuffer)
-                else:        #读操作
-                    read_disk(trace,blkid)
-#
-        # hit不足，触发【更新操作】
+        hit = cacheDict[trace].cache.get_hit()
+        #needInmediateM = cacheDict[trace].do_req(rw, blkid)
+        (needInmediateM, hit, update, evicted) = cacheDict[trace].do_req(rw, blkid)
+        # # 命中
+        # if cacheDict[trace].cache.get_hit() > hit:
+        #     if rw == 0:
+        #         pass
+        #     else:
+        #         # 写hit
+        #         myupdate[trace] += 1
+        
+        # # Miss且触发更新操作
+        # elif cacheDict[trace].cache.get_top_n(1) == [blkid]:
+        #     myupdate[trace] += 1
+        
+        # hit不足，触发更新操作
         if needInmediateM and mytime-dimdm[trace]>=policy["interval"]:
+
+            configbegin=time.clock()
+            # print("enter hit scheme")
+            # print("249=", trace)
             dimdm[trace] = mytime
-            schemel = cacheDict[trace].get_hit_scheme()          #能够提高命中率的更改列表deltas与deltap
-            temp = device.try_modify(schemel)         #返回修改方案改变的s和p (deltas, deltap)
-            # device空间不足（即所有更改方案都不合适），需要强制更新全体缓存配置
+            schemel = cacheDict[trace].get_hit_scheme()
+            temp = device.try_modify(schemel)
+            # device空间不足，需要强制更新全体缓存配置
             if temp == None:
                 debugCount+=1
                 if debugCount % 100 == 0:
                     print("mydebugCount", debugCount)
                 mytrace = trace
                 potentials = []
-                # potentials里面  去掉需要更改的trace
+                # potentials里面去掉需要更改的trace
                 # 其实从逻辑上，是可以把schemel插入到potentials中的
                 # 只是考虑到schemel中可能有一些非sample的情况，update是错的，就没放
                 # 而且get_best_config是以write为第一优先级
@@ -429,7 +345,7 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                     l = cacheDict[trace].get_potential()
                     potentials.append(l)
                 # print("len of potentials=", len(potentials))
-                for scheme in schemel:    #计划
+                for scheme in schemel:
                     (dlts, dltp, thit) = scheme
                     # print(scheme)
                     tsize = cacheDict[mytrace].cache.size+dlts
@@ -439,7 +355,7 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                     if result==None or len(result)==0:
                         continue
                     sign = False
-                    device.usedSize = cacheDict[mytrace].cache.size   #只计算mytrace的size?
+                    device.usedSize = cacheDict[mytrace].cache.size
                     for i in range(len(traces)):
                         if traces[i] == mytrace:
                             sign = True
@@ -448,23 +364,14 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                             item = result[i-1]
                         else:
                             item = result[i]                    
-                        device.try_modify([(item[0], item[1], None)])   #self.usedSize += deltas(item[0])
-                        # try_modify在尝试的同时已经将device的usedsize修改了
-#++  更改所有cache的配置
+                        
+                        device.try_modify([(item[0], item[1], None)])
                         (dellist, freenode)=cacheDict[traces[i]].change_config(item[0], item[1])
-                        if freenode<0:
-                            print("Wait!,freenode=",freenode)
-                            waitchange[traces[i]]=(dellist, freenode)
-                        else:
-                            change_ssd_config(traces[i],dellist, freenode)
-                    for the_trace in waitchange:
-                        change_ssd_config(the_trace,waitchange[the_trace][0], waitchange[the_trace][1])
-#
                         # print(item, deltas, deltap)
-                    # 把[剩余的size]都分给hit不足的cache Q:是否就是保证了该device的usedsize一定等于device的size呢
+                    # 把剩余的size都分给hit不足的cache
                     for i in range(len(schemel)):
                         (tsize, tp, thit) = schemel[i]
-                        availSize = device.size-device.usedSize   #可以放在循环外？
+                        availSize = device.size-device.usedSize
                         # print("293 availSize=", availSize)
                         schemel[i] = (availSize, tp, thit)
                     temp = device.try_modify(schemel)
@@ -473,41 +380,39 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                     p = deltap + cacheDict[trace].cache.get_p()
                     # print(temp)
                     # print(s, p)
-#++     更改配置
                     (dellist, freenode)=cacheDict[trace].change_config(s, p)
-                    change_ssd_config(trace,dellist, freenode)
-#
                     break
-            # device空间足够，直接更改该trace的配置
-            # Q:这种情况存在吗？不是每次都会将device所有的size都分配给所有的cache吗
             else:
                 (deltas, deltap) = temp
                 s = deltas + cacheDict[trace].cache.get_size()
                 p = deltap + cacheDict[trace].cache.get_p()
                 # 在前面try_modify已经调用过
-#++     更改配置
-                (dellist, freenode)=cacheDict[trace].change_config(s, p) 
-                change_ssd_config(trace,dellist, freenode)
-#
-
+                (dellist, freenode)=cacheDict[trace].change_config(s, p)
+            configend=time.clock()
+            total_config_time += (configend-configbegin)
             # print("hit不足需要更新", "trace=", trace, cacheDict[trace].req,
              #    "baseline=", cacheDict[trace].baseline.get_hit(),
              #    "cache=", cacheDict[trace].cache.get_hit(),
              # "deltas=", deltas, "deltap=", deltap, "s=", s, "p=", p, sep="\t") 
             # print("test error needInmediateM")
             # sys.exit(0)
+        
         # 一个周期结束，修改所有cache配置
         if mytime - periodStart >= periodLength:
+            configbegin=time.clock()
             print("one period stop!", mytime/periodLength)
-            if policy["watch"][0]:               #policy["watch"]是什么
+            if policy["watch"][0]:
                 if policy["watch"][1] < mytime:
                     break
+                # else:
                 elif int(mytime/periodLength)%policy["watch"][-1]==0:
                     record_process(policy["watch"][2], cacheDict)
+                
             periodStart = mytime
-            potentials = []      
-            for trace in traces:    #potentials：所有trace的potential的【候选集】
+            potentials = []
+            for trace in traces:
                 # print("输出", trace, "的候选集：")
+                
                 l = cacheDict[trace].get_potential()
                 # for tempPotential in l:
                 #     tempPotential.print_sample()
@@ -516,46 +421,32 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                     break                
                 potentials.append(l)
             # print("len(potentials)=", len(potentials))
-            if len(potentials) < len(traces):    #这个长度对比的目的是什么呢？
+            if len(potentials) < len(traces):
                 result = []
             else:
-                (result, tsize) = device.get_best_config(potentials, 0) # 返回最好的配置
+                (result, tsize) = device.get_best_config(potentials, 0)
                 assert(len(result)<=len(traces))
-            #没有更好的候选集？
-            if len(result) == 0:             
-                continue                    #直接处理下一条req    
+            if len(result) == 0:
+                continue
             # 防止修改方案失效
             device.usedSize = 0
-            waitchange={}
             for i in range(len(traces)):
                 # print("i=", i, ",trace=", traces[i], result[i].get_size(), result[i].get_p())
-                #尝试各个修改方案
                 temp = device.try_modify([(result[i][0], result[i][1], None)])
-                assert temp!=None        #保证能够找到合适的修改方案，否则退出程序（？）
-#++             更改配置,这里需要保证有数据的cache先让出ssd
+                assert temp!=None
                 (dellist, freenode)=cacheDict[traces[i]].change_config(result[i][0], result[i][1])
-                if freenode<0:
-                    print("Wait!")
-                    waitchange[traces[i]]=(dellist, freenode)
-                else:
-                    change_ssd_config(traces[i],dellist, freenode)
-#
                 cacheDict[traces[i]].init_samples()
-#++
-            for the_trace in waitchange:
-                change_ssd_config(the_trace,waitchange[the_trace][0], waitchange[the_trace][1])
-#
             print("after config", device.usedSize)
+            configend=time.clock()
+            total_config_time += (configend-configbegin)
     if policy["watch"][0]:
         print_watch(policy["watch"][2], cacheDict, policy["watch"][-1]*periodLength)
     for i in range(len(traces)):
         cacheDict[traces[i]].finish()
-    runTime = time.clock()-timestart     #计算cache运行时间
+    runTime = time.clock()-timestart
     print("consumed", runTime, "s")
-    print_result(traces, device, cacheDict, totalTimeLength, starts, periodLength, (bsizeRate, csizeRate), policy, runTime)    
+    print_result(traces, device, cacheDict, totalTimeLength, starts, periodLength, (bsizeRate, csizeRate), policy, runTime, total_config_time)
     os.remove(traceFileName)
-#++
-    return runTime
 
 # 因为允许不同trace有不同的开始，所以所有trace时间都对准为0
 # traces = ["hm_0", "prn_1", "ts_0", "rsrch_0", "src1_2", 
@@ -575,11 +466,28 @@ for i in range(len(starts)):
 
 unitLength = 1*danwei
 
-policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, 
+# policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, 
+# "interval":int(1*danwei), "hitThrot":0.005, "watch":(False, 1800*danwei, {}, 10)}
+
+policy = {"nrsamples":2, "deltas":0.02, "deltap":0.1, "throt":0.01, 
 "interval":int(1*danwei), "hitThrot":0.005, "watch":(False, 1800*danwei, {}, 10)}
 
+logfile = "./test_result.csv"
+fp = open(logfile, 'a')
+print("Without_IO_version", file=fp)
+for i in range(5):
+    #初始化参数
+    (total_config_time,runTime)=process(traces, starts, totalTimeLength, unitLength, 0.1 , 0.2, policy)
+    print('------------------------------------------------', file=fp)
+    print("No. ",i, file=fp)
+    print("runtime = ", runTime, file=fp)
+    print("configtime = ", total_config_time,file=fp)
+print('------------------------------------------------', file=fp)
+fp.close()
 
-process(traces, starts, totalTimeLength, unitLength, float(sys.argv[1]), float(sys.argv[2]), policy)
+#0.1 0.2
+#测一小时
+
 
 # l = [(1669659,73707),
 # (778871  ,110556),
@@ -604,33 +512,33 @@ process(traces, starts, totalTimeLength, unitLength, float(sys.argv[1]), float(s
 # ]
 
 # l3 = [
-# (3360,  11424),
+# (3360 ,  11424),
 # (10081,  7886),
-# (4032,  5920),
-# (3360,  121),
+# (4032 ,  5920),
+# (3360 ,  121),
 # (10081,  121),
 # (19283,  87),
-# (3360,  122),
+# (3360 ,  122),
 # (10081,  122),
 # (16359,  78
-# )(3360,  154
+# )(3360 ,  154
 # )(10081,  154)
 # (15057,  106)
-# (3360,  197)
+# (3360 ,  197)
 # (10081,  197)
 # (14739,  123)
-# (3360,  796)
+# (3360 ,  796)
 # (10081,  796)
 # (11645,  418)
-# (3360,  254)
+# (3360 ,  254)
 # (10081,  254)
 # (15134,  148)
-# (3360,  123)
+# (3360 ,  123)
 # (10081,  123)
 # (10363,  78
-# )(3360,  671
+# )(3360 ,  671
 # )(10081,  671),
-# (8824,  394),
+# (8824 ,  394),
 # ]
 
 # costl = []
